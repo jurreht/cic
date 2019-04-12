@@ -34,7 +34,7 @@ def test_cic(inpath):
     y10 = objs['y10'][:, 0]
     y11 = objs['y11'][:, 0]
 
-    est_qte, sd_qte, est_ate, sd_ate = cic.calculate_cic(
+    est_qte, se_qte, est_ate, se_ate = cic.calculate_cic(
         y00, y01, y10, y11, n_bootstraps=499, n_draws=10000,
         moments=[lambda x: np.mean(x)],
         # The original code uses some small (in my view unneccessary)
@@ -44,14 +44,14 @@ def test_cic(inpath):
         use_corrections=True
     )
     est_test = objs['est'][0, 1:10]
-    sd_test = objs['se'][1, 1:10]
+    se_test = objs['se'][1, 1:10]
 
     # Test quantile treatment effects
     assert_allclose(est_qte, est_test)
-    assert_allclose(sd_qte, sd_test, atol=5e-2, rtol=1e-3)
+    assert_allclose(se_qte, se_test, atol=5e-2, rtol=1e-3)
 
     # Test average treatment effect
     # It is possible to get closer than an atol of 5e-3 by increasing n_draws
     # above, at the cost of slower tests
     assert_allclose(est_ate[0], objs['est'][0, 0], atol=5e-3)
-    assert_allclose(sd_ate[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)
+    assert_allclose(se_ate[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)

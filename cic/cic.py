@@ -33,14 +33,14 @@ def calculate_cic(
             quantiles, moments, draws, cdf_corr, inv_corr
         )
 
-    bootstrap_quantile_sd = np.std(bootstrap_quantile_eff, axis=0)
-    bootstrap_moment_sd = np.std(bootstrap_moment_eff, axis=0)
+    bootstrap_quantile_se = np.std(bootstrap_quantile_eff, axis=0)
+    bootstrap_moment_se = np.std(bootstrap_moment_eff, axis=0)
 
     if moments is None:
-        return estimated_quantile_effects, bootstrap_quantile_sd
+        return estimated_quantile_effects, bootstrap_quantile_se
     else:
-        return (estimated_quantile_effects, bootstrap_quantile_sd,
-                estimated_moment_effects, bootstrap_moment_sd)
+        return (estimated_quantile_effects, bootstrap_quantile_se,
+                estimated_moment_effects, bootstrap_moment_se)
 
 
 def calculate_effects(
