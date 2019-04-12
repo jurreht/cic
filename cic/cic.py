@@ -1,6 +1,7 @@
 import itertools
 
 import joblib
+import numba
 import numpy as np
 
 
@@ -330,9 +331,15 @@ def bootstrap_sample(
         quantiles, moments, draws, cdf_corr, inv_corr
     )
 
+
 def cdf_support(y, cdf_corr):
     support = np.unique(y)
-    cdf = np.mean(y[:, np.newaxis] <= support[np.newaxis] + cdf_corr, axis=0)
+    if support.shape[0] == y.shape[0] and cdf_corr == 0:
+        # In this common case we can achieve a speedup
+        cdf = np.arange(1, y.shape[0] + 1) / y.shape[0]
+    else:
+        cdf = np.mean(y[:, np.newaxis] <= support[np.newaxis] + cdf_corr,
+                      axis=0)
     return cdf, support
 
 
@@ -346,11 +353,18 @@ def calc_cf_cdf(y00, y01, y10, cdf_corr, inv_corr):
     return cdf, support
 
 
+@numba.jit(nopython=True, cache=True, nogil=True)
 def get_quantiles(cdf, support, quantiles, inv_corr):
-    indices = np.argmin(
-        cdf[:, np.newaxis] < (quantiles[np.newaxis] - inv_corr),
-        axis=0)
-    return support[indices]
+    ret = np.empty(quantiles.shape[0])
+    for i in range(quantiles.shape[0]):
+        p = quantiles[i]
+        for j in range(cdf.shape[0]):
+            if cdf[j] >= p - inv_corr:
+                ret[i] = support[j]
+                break
+        else:
+            ret[i] = 1
+    return ret
 
 
 def sample_from_cdf(cdf, support, draws):

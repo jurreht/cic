@@ -11,6 +11,7 @@ setup(
     long_description=open('README.md').read(),
     install_requires=[
         'numpy >= 1.10.0',
-        'joblib >= 0.13'
+        'joblib >= 0.13',
+        'numba >= 0.43'
     ]
 )
