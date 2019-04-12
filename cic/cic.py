@@ -364,7 +364,9 @@ def get_quantiles(cdf, support, quantiles, inv_corr):
             ret[i] = support[0]
         else:
             # Use the fact that cdf should be approximately uniformly
-            # distributed if the data is a random sample. 
+            # distributed if the data is a random sample. Hence, this
+            # is a pretty good first guess where the percentile will
+            # be in the sorted array.
             j = math.floor(p * (n_els - 1))
             if cdf[j] < p:
                 while cdf[j] < p:
