@@ -1,1 +1,4 @@
+# Requirements for setting up a development environment, in which the tests run
 -e .
+pytest
+scipy

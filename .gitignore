@@ -1,3 +1,29 @@
+# Ignore files from the Athey & Imbens (2006) paper
+script/cdf_bar.m
+script/cdf.m
+script/cdfinv_bracket.m
+script/cdfinv.m
+script/cic_con.m
+script/cic_dci.m
+script/cic_low.m
+script/cic_program_documentation.pdf
+script/cic_upp.m
+script/cic.m
+script/cumdf.m
+script/cumdfinv.m
+script/fden.m
+script/gen.m
+script/main_mvd_05dec19.m
+script/main_sim_05dec19_continue.m
+script/main_sim_05dec19_start.m
+script/mvd.dat
+script/ols.m
+script/out_sim_05dec19.mat
+script/prob.m
+script/sim_theory.m
+script/supp.m
+script/table123.mat
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
