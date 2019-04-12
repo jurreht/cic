@@ -23,7 +23,9 @@ def cases():
 
 
 @pytest.mark.parametrize('inpath', cases())
-def test_cic(inpath):
+# Run both serially and in parallel
+@pytest.mark.parametrize('n_jobs', [None, -1])
+def test_cic(inpath, n_jobs):
     np.random.seed(323490)
 
     # Load the case
@@ -37,6 +39,7 @@ def test_cic(inpath):
     est_qte, se_qte, est_ate, se_ate = cic.calculate_cic(
         y00, y01, y10, y11, n_bootstraps=499, n_draws=10000,
         moments=[lambda x: np.mean(x)],
+        n_jobs=n_jobs,
         # The original code uses some small (in my view unneccessary)
         # numerical corrections when calculating cdf's and inverse cdf's.
         # Without using them here also there will always be some test

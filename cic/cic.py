@@ -1,9 +1,10 @@
+import joblib
 import numpy as np
 
 
 def calculate_cic(
     y00, y01, y10, y11, quantiles=np.linspace(.1, .9, 9), moments=None,
-    n_bootstraps=99, n_draws=1000, use_corrections=False
+    n_bootstraps=99, n_draws=1000, n_jobs=None, use_corrections=False
 ):
     r"""
     Estimates a model using the Changes-In-Changes estimator.
@@ -44,6 +45,12 @@ def calculate_cic(
         Number of draws from the counterfactual distribution to
         calculate the treatment effect of user-supplied moments. Only
         relevant if ``moments is not None``.
+    n_jobs : int, optional
+        Number of parallel jobs to use for bootstrapping standard
+        errors. When None (the default), bootstrap serially. Otherwise,
+        this interpreted in as in joblib.Parallel, i.e. specify a
+        positive int to run that many jobs and a negative int to run
+        ``num_cpu + 1 + n_jobs`` jobs.
     use_corrections : bool, optional
         Use numerical corrections when calculating CDF's and inverse
         CDF's as in the original code by Athey & Imbens. Set to
@@ -132,25 +139,37 @@ def calculate_cic(
         y00, y01, y10, y11, quantiles, moments, draws, cdf_corr, inv_corr)
 
     # Bootstrap standard errors
-    bootstrap_quantile_eff = np.empty((n_bootstraps, quantiles.shape[0]))
-    n_moments = len(moments) if moments is not None else 0
-    bootstrap_moment_eff = np.empty((n_bootstraps, n_moments))
-    for i in range(n_bootstraps):
-        y00_resample = np.random.choice(y00, y00.shape[0], replace=True)
-        y01_resample = np.random.choice(y01, y01.shape[0], replace=True)
-        y10_resample = np.random.choice(y10, y10.shape[0], replace=True)
-        y11_resample = np.random.choice(y11, y11.shape[0], replace=True)
-
-        bootstrap_quantile_eff[i], bootstrap_moment_eff[i] = calculate_effects(
-            y00_resample, y01_resample, y10_resample, y11_resample,
-            quantiles, moments, draws, cdf_corr, inv_corr
+    if n_jobs is None:
+        # Run sequentially
+        bootstrap_quantile_eff, bootstrap_moment_eff = zip(*map(
+            lambda _: bootstrap_sample(y00, y01, y10, y11, quantiles, moments,
+                                       draws, cdf_corr, inv_corr),
+            range(n_bootstraps)))
+    else:
+        # Run on multiple cores
+        # Use threads a background since most of the time will be
+        # spent in NumPy routines, which release the GIL
+        ret = joblib.Parallel(n_jobs=n_jobs, prefer='threads')(
+            joblib.delayed(bootstrap_sample)(y00, y01, y10, y11, quantiles,
+                                             moments, draws, cdf_corr,
+                                             inv_corr)
+            for _ in range(n_bootstraps)
         )
+        bootstrap_quantile_eff, bootstrap_moment_eff = zip(*ret)
+    # Concatenate into a single numpy array
+    bootstrap_quantile_eff = np.concatenate([
+        x[np.newaxis] for x in bootstrap_quantile_eff
+    ], axis=0)
+    bootstrap_moment_eff = np.concatenate([
+        x[np.newaxis] for x in bootstrap_moment_eff
+    ], axis=0)
 
     if n_bootstraps > 0:
         bootstrap_quantile_se = np.std(bootstrap_quantile_eff, axis=0)
         bootstrap_moment_se = np.std(bootstrap_moment_eff, axis=0)
     else:
         bootstrap_quantile_se = np.zeros(quantiles.shape[0])
+        n_moments = len(moments) if moments is not None else 0
         bootstrap_moment_se = np.zeros(n_moments)
 
     if moments is None:
@@ -180,6 +199,19 @@ def calculate_effects(
     else:
         return quantile_effects, None
 
+
+def bootstrap_sample(
+    y00, y01, y10, y11, quantiles, moments, draws, cdf_corr, inv_corr
+):
+    y00_resample = np.random.choice(y00, y00.shape[0], replace=True)
+    y01_resample = np.random.choice(y01, y01.shape[0], replace=True)
+    y10_resample = np.random.choice(y10, y10.shape[0], replace=True)
+    y11_resample = np.random.choice(y11, y11.shape[0], replace=True)
+
+    return calculate_effects(
+        y00_resample, y01_resample, y10_resample, y11_resample,
+        quantiles, moments, draws, cdf_corr, inv_corr
+    )
 
 def cdf_support(y, cdf_corr):
     support = np.unique(y)
