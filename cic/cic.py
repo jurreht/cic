@@ -5,7 +5,7 @@ def calculate_cic(
     y00, y01, y10, y11, quantiles=np.linspace(.1, .9, 9), moments=None,
     n_bootstraps=99, n_draws=1000, use_corrections=False
 ):
-    """
+    r"""
     Estimates a model using the Changes-In-Changes estimator.
 
     This function estimates non-linear treatments effects using
@@ -73,9 +73,9 @@ def calculate_cic(
     -----
 
     `calculate_cic` calculates the exact counterfactual distribution,
-    :math:`\\bar{F}_{11}`, using
+    :math:`\bar{F}_{11}`, using
 
-    .. math:: \\bar{F}_{11}(x) = \hat{F}_{10}(\hat{F}_{00}^{-1}(\hat{F}_{01}(x))),
+    .. math:: \bar{F}_{11}(x) = \hat{F}_{10}(\hat{F}_{00}^{-1}(\hat{F}_{01}(x))),
 
     where :math:`\hat{F}_{it}` is the empirical cdf of group :math:`i` in
     period :math:`t`.
@@ -83,13 +83,13 @@ def calculate_cic(
     Quantile treatment effects are calculated using the generalized
     inverse cdf:
 
-    .. math:: \\begin{align*}
-       F^{-1}(p) &= \inf\{x \in \mathbb{R} : F(x) \ge p\} \\\\
-       \\text{qte}(p) &= \hat{F}_{11}^{-1}(p) - \\bar{F}_{11}^{-1}(p)
+    .. math:: \begin{align*}
+       F^{-1}(p) &= \inf\{x \in \mathbb{R} : F(x) \ge p\} \\
+       \text{qte}(p) &= \hat{F}_{11}^{-1}(p) - \bar{F}_{11}^{-1}(p)
        \end{align*}
 
     Moments are calculated by using a probability integral transform
-    to sample from :math:`\\bar{F}_{11}`.
+    to sample from :math:`\bar{F}_{11}`.
 
     In general, `calculate_cic` does not give numerically equivalent
     results to the original code used by Athey & Imbens [2]_. The
