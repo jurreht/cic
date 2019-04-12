@@ -1,4 +1,5 @@
 import itertools
+import math
 
 import joblib
 import numba
@@ -356,14 +357,23 @@ def calc_cf_cdf(y00, y01, y10, cdf_corr, inv_corr):
 @numba.jit(nopython=True, cache=True, nogil=True)
 def get_quantiles(cdf, support, quantiles, inv_corr):
     ret = np.empty(quantiles.shape[0])
+    n_els = cdf.shape[0]
     for i in range(quantiles.shape[0]):
-        p = quantiles[i]
-        for j in range(cdf.shape[0]):
-            if cdf[j] >= p - inv_corr:
-                ret[i] = support[j]
-                break
+        p = quantiles[i] - inv_corr
+        if cdf[0] >= p:
+            ret[i] = support[0]
         else:
-            ret[i] = 1
+            # Use the fact that cdf should be approximately uniformly
+            # distributed if the data is a random sample. 
+            j = math.floor(p * (n_els - 1))
+            if cdf[j] < p:
+                while cdf[j] < p:
+                    j += 1
+            else:
+                while cdf[j] >= p:
+                    j -= 1
+                j += 1
+            ret[i] = support[j]
     return ret
 
 
