@@ -38,6 +38,8 @@ def calculate_cic(
         which is the calculated moment.
     n_bootstraps : int, optional
         Number of bootstrap simulations to calculate standard errors.
+        Set to 0 to prevent bootstrapping. In this case, calculated
+        standard errors will equal zero.
     n_draws : int, optional
         Number of draws from the counterfactual distribution to
         calculate the treatment effect of user-supplied moments. Only
@@ -144,8 +146,12 @@ def calculate_cic(
             quantiles, moments, draws, cdf_corr, inv_corr
         )
 
-    bootstrap_quantile_se = np.std(bootstrap_quantile_eff, axis=0)
-    bootstrap_moment_se = np.std(bootstrap_moment_eff, axis=0)
+    if n_bootstraps > 0:
+        bootstrap_quantile_se = np.std(bootstrap_quantile_eff, axis=0)
+        bootstrap_moment_se = np.std(bootstrap_moment_eff, axis=0)
+    else:
+        bootstrap_quantile_se = np.zeros(quantiles.shape[0])
+        bootstrap_moment_se = np.zeros(n_moments)
 
     if moments is None:
         return estimated_quantile_effects, bootstrap_quantile_se
