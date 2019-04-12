@@ -38,7 +38,7 @@ def test_cic(inpath, n_jobs):
 
     est_qte, se_qte, est_ate, se_ate = cic.calculate_cic(
         y00, y01, y10, y11, n_bootstraps=499, n_draws=10000,
-        moments=[lambda x: np.mean(x)],
+        moments=[np.mean],
         n_jobs=n_jobs,
         # The original code uses some small (in my view unneccessary)
         # numerical corrections when calculating cdf's and inverse cdf's.
