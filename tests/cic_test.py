@@ -58,3 +58,46 @@ def test_cic(inpath, n_jobs):
     # above, at the cost of slower tests
     assert_allclose(est_ate[0], objs['est'][0, 0], atol=5e-3)
     assert_allclose(se_ate[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)
+
+
+@pytest.mark.parametrize(
+    'inpath',
+    # exp8 and exp10 don't pass without use_corrections, which is only
+    # supported for the simple case.
+    [c for c in cases() if not ('exp8' in c or 'exp10' in c)])
+def test_multiple_cic_from_simple_case(inpath):
+    np.random.seed(442342234)
+
+    # Load the case
+    objs = scipy.io.loadmat(inpath)
+
+    y00 = objs['y00'][:, 0]
+    y01 = objs['y01'][:, 0]
+    y10 = objs['y10'][:, 0]
+    y11 = objs['y11'][:, 0]
+
+    y = np.concatenate([y00, y01, y10, y11])
+    g = np.concatenate([np.zeros(y00.shape[0] + y01.shape[0], dtype=np.int_),
+                        np.ones(y10.shape[0] + y11.shape[0], dtype=np.int_)])
+    t = np.concatenate([np.zeros(y00.shape[0], dtype=np.int_),
+                        np.ones(y01.shape[0], dtype=np.int_),
+                        np.zeros(y10.shape[0], dtype=np.int_),
+                        np.ones(y11.shape[0], dtype=np.int_)])
+    treat = np.array([[0, 0], [0, 1]], dtype=np.bool_)
+
+    treatment_for, est_qte, se_qte, est_ate, se_ate = \
+        cic.calculate_general_cic(
+            y, g, t, treat, n_bootstraps=499, moments=[np.mean], n_draws=10000)
+
+    assert np.all(treatment_for == np.array([[1, 1]], dtype=np.int_))
+
+    est_test = objs['est'][0, 1:10]
+    se_test = objs['se'][1, 1:10]
+
+    assert_allclose(est_qte[0], est_test)
+    assert_allclose(se_qte[0], se_test, atol=5e-2, rtol=1e-3)
+    # Test average treatment effect
+    # It is possible to get closer than an atol of 5e-3 by increasing n_draws
+    # above, at the cost of slower tests
+    assert_allclose(est_ate[0], objs['est'][0, 0], atol=5e-3)
+    assert_allclose(se_ate[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)

@@ -10,7 +10,7 @@ setup(
     description='A library to compute the Changes-In-Changes estimator',
     long_description=open('README.md').read(),
     install_requires=[
-        'numpy >= 1.9.0',
+        'numpy >= 1.10.0',
         'joblib >= 0.13'
     ]
 )

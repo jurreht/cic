@@ -1,3 +1,5 @@
+import itertools
+
 import joblib
 import numpy as np
 
@@ -179,6 +181,99 @@ def calculate_cic(
                 estimated_moment_effects, bootstrap_moment_se)
 
 
+def calculate_general_cic(
+    y, g, t, treat, quantiles=np.linspace(.1, .9, 9), moments=None,
+    n_draws=1000, n_bootstraps=99
+):
+    n_obs = y.shape[0]
+    n_groups = treat.shape[0]
+    n_periods = treat.shape[1]
+    if t.shape[0] != n_obs:
+        raise ValueError('len(y) should equal len(t).')
+    if g.shape[0] != n_obs:
+        raise ValueError('len(y) should equal len(g).')
+    if t.max() >= n_periods:
+        raise ValueError('Invalid period provided for some observations.')
+    if g.max() >= n_groups:
+        raise ValueError('Invalid group provided for some observations.')
+    if np.any((~treat[:, 1:]) & (treat[:, 1:] ^ treat[:, :-1])):
+        raise ValueError('A group cannot become untreated after becoming'
+                         ' treated.')
+
+    # Use the same draws for calculating moments during effect size
+    # calculation as during bootstrapping
+    draws = np.random.uniform(size=n_draws)
+
+    # Calculate the effect using all possible combinations of treatment
+    # and control
+    possible_combinations = tuple(filter(
+        lambda x: valid_combination(treat, *x),
+        itertools.product(range(n_groups), range(n_periods), repeat=2)))
+    effects = calculate_multiple_effects(y, g, t, possible_combinations,
+                                         quantiles, moments, draws)
+
+    # Bootstrap the covariance matrix of the treatments effects
+    bootstrap_effects = np.empty((n_bootstraps, effects.shape[0],
+                                  effects.shape[1]))
+    for i in range(n_bootstraps):
+        y_resample = np.empty_like(y)
+        for j, k in itertools.product(range(n_groups), range(n_periods)):
+            target = (g == j) & (t == k)
+            y_resample[target] = np.random.choice(y[target], target.sum(),
+                                                  replace=True)
+        bootstrap_effects[i] = calculate_multiple_effects(
+            y_resample, g, t, possible_combinations, quantiles, moments,
+            draws
+        )
+
+    # Calculate the combined effect
+    treatment_for = np.empty((len(possible_combinations), 2))
+    n_treatment_effects = treat.sum()
+    # The matrix A maps `effects` into the (g, t)-treatment effect
+    A = np.zeros((len(possible_combinations), n_treatment_effects))
+    i = 0
+    for g1, t1 in itertools.product(range(n_groups), range(n_periods)):
+        if treat[g1, t1]:
+            A[:, i] = tuple(map(
+                lambda x: x[2] == g1 and x[3] == t1,
+                possible_combinations
+            ))
+            treatment_for[i] = g1, t1
+            i += 1
+
+    effect = np.empty((n_treatment_effects, effects.shape[1]))
+    effect_se = np.empty_like(effect)
+    for effect_ind in range(effects.shape[1]):
+        # TODO: The covariance of the bootstrap sample is not necessarily a
+        # good estimator of the covariance matrix! Perhaps try also using
+        # the percentile method. See Machado, Jose A.F. and Paulo Parente.
+        # 2005. "Bootstrap estimation of covariance matrices via the
+        # percentile method." Econometrics Journal 8: 70-78.
+        cov = np.cov(bootstrap_effects[:, :, effect_ind], rowvar=False,
+                     bias=True)
+        if effects.shape[0] == 1:
+            # In this case np.cov() returns a scalar. Invert it and make
+            # it a matrix.
+            cov_inv = (1 / cov)[np.newaxis, np.newaxis]
+        else:
+            cov_inv = np.linalg.pinv(cov)
+
+        effect[:, effect_ind] = np.linalg.solve(
+            A.T @ cov_inv @ A, A.T @ cov_inv @ effects[:, effect_ind])
+        effect_cov = np.linalg.inv(A.T @ cov_inv @ A)
+        effect_se[:, effect_ind] = np.sqrt(np.diag(effect_cov))
+
+    if moments is None:
+        return treatment_for, effect, effect_se
+    else:
+        quantile_effect = effect[:, :quantiles.shape[0]]
+        quantile_se = effect_se[:, :quantiles.shape[0]]
+        moment_effect = effect[:, quantiles.shape[0]:]
+        moment_se = effect_se[:, quantiles.shape[0]:]
+        return (treatment_for, quantile_effect, quantile_se,
+                moment_effect, moment_se)
+
+
 def calculate_effects(
     y00, y01, y10, y11, quantiles, moments, draws, cdf_corr, inv_corr
 ):
@@ -198,6 +293,28 @@ def calculate_effects(
         return quantile_effects, moment_effects
     else:
         return quantile_effects, None
+
+
+def calculate_multiple_effects(
+    y, g, t, possible_combinations, quantiles, moments, draws
+):
+    n_targets = quantiles.shape[0]
+    if moments is not None:
+        n_targets += len(moments)
+    effects = np.empty((len(possible_combinations), n_targets))
+    for i, (t0, g0, t1, g1) in enumerate(possible_combinations):
+        y00 = y[(g == g0) & (t == t0)]
+        y01 = y[(g == g0) & (t == t1)]
+        y10 = y[(g == g1) & (t == t0)]
+        y11 = y[(g == g1) & (t == t1)]
+        # calculate_effects returns None as second element if moments is None.
+        # When moments is not None, we want to concatenate the return elements.
+        effects[i] = np.concatenate([
+            x for x in
+            calculate_effects(y00, y01, y10, y11, quantiles, moments,
+                              draws, 0, 0)
+            if x is not None])
+    return effects
 
 
 def bootstrap_sample(
@@ -238,3 +355,8 @@ def get_quantiles(cdf, support, quantiles, inv_corr):
 
 def sample_from_cdf(cdf, support, draws):
     return get_quantiles(cdf, support, draws, 0)
+
+
+def valid_combination(treat, t0, g0, t1, g1):
+    return ((not (treat[g0, t0] or treat[g0, t1] or treat[g1, t0])) and
+            treat[g1, t1])
