@@ -10,6 +10,6 @@ setup(
     description='A library to compute the Changes-In-Changes estimator',
     long_description=open('README.md').read(),
     install_requires=[
-        'numpy >= 1.16.1',
+        'numpy >= 1.9.0'
     ]
 )
