@@ -100,3 +100,183 @@ def test_multiple_cic_from_simple_case(inpath):
     # above, at the cost of slower tests
     assert_allclose(model.moment_effect[0], objs['est'][0, 0], atol=5e-3)
     assert_allclose(model.moment_se[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)
+
+
+def test_cic_model_no_effect():
+    """
+    Test a 3x3 CIC model where none of the treatments have any effect.
+    The test is done by simulating and estimating the model many times
+    and checking the coverage of the confidence intervals.
+    """
+    np.random.seed(45354354)
+
+    treat = np.array([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 1, 1]
+    ], dtype=np.bool)
+
+    n_trials = 250
+    n_obs = 1000
+    quantiles = np.array([0.1, .3, .5, .7, .9])
+    effect_in_ci = np.zeros((3, quantiles.shape[0]), dtype=np.int_)
+    for trial_ind in range(n_trials):
+        g, t, y = generate_sample(n_obs)
+        model = cic.CICModel(y, g, t, treat, quantiles)
+        effect_in_ci += (
+            (model.quantile_effect - 1.96 * model.quantile_se <= 0) &
+            (model.quantile_effect + 1.96 * model.quantile_se >= 0))
+
+    coverage = effect_in_ci / n_trials
+    assert_allclose(coverage, np.ones_like(coverage) * .95, rtol=5e-2)
+
+
+def test_cic_model_shift_effect():
+    """
+    Test a 3x3 CIC model where the treatments are linear shifts, but
+    different for different groups and times.
+    The test is done by simulating and estimating the model many times
+    and checking the coverage of the confidence intervals.
+    """
+    np.random.seed(45354354)
+
+    treat = np.array([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 1, 1]
+    ], dtype=np.bool)
+
+    n_trials = 250
+    n_obs = 1000
+    quantiles = np.array([.25, .5, .75])
+    moments = [np.mean, np.std]
+    quantile_in_ci = np.zeros((3, 3, 3), dtype=np.int_)
+    moment_in_ci = np.zeros((3, 3, 2), dtype=np.int_)
+    for trial_ind in range(n_trials):
+        g, t, y = generate_sample(n_obs)
+        y[(g == 1) & (t == 2)] += 1
+        y[(g == 2) & (t == 1)] -= 1
+        y[(g == 2) & (t == 2)] -= 2
+        model = cic.CICModel(y, g, t, treat, quantiles, moments)
+
+        mean, se = model.treatment_quantile(1, 2)
+        quantile_in_ci[:, 0] += ((mean - 1.96 * se <= 1) &
+                                 (mean + 1.96 * se >= 1))
+        mean, se = model.treatment_quantile(2, 1)
+        quantile_in_ci[:, 1] += ((mean - 1.96 * se <= -1) &
+                                 (mean + 1.96 * se >= -1))
+        mean, se = model.treatment_quantile(2, 2)
+        quantile_in_ci[:, 2] += ((mean - 1.96 * se <= -2) &
+                                 (mean + 1.96 * se >= -2))
+
+        mean, se = model.treatment_moment(1, 2)
+        moment_in_ci[:, 0, 0] += ((mean[0] - 1.96 * se[0] <= 1) &
+                                  (mean[0] + 1.96 * se[0] >= 1))
+        moment_in_ci[:, 0, 1] += ((mean[1] - 1.96 * se[1] <= 0) &
+                                  (mean[1] + 1.96 * se[1] >= 0))
+        mean, se = model.treatment_moment(2, 1)
+        moment_in_ci[:, 1, 0] += ((mean[0] - 1.96 * se[0] <= -1) &
+                                  (mean[0] + 1.96 * se[0] >= -1))
+        moment_in_ci[:, 1, 1] += ((mean[1] - 1.96 * se[1] <= 0) &
+                                  (mean[1] + 1.96 * se[1] >= 0))
+        mean, se = model.treatment_moment(2, 2)
+        moment_in_ci[:, 2, 0] += ((mean[0] - 1.96 * se[0] <= -2) &
+                                  (mean[0] + 1.96 * se[0] >= -2))
+        moment_in_ci[:, 2, 1] += ((mean[1] - 1.96 * se[1] <= 0) &
+                                  (mean[1] + 1.96 * se[1] >= 0))
+
+    quantile_coverage = quantile_in_ci / n_trials
+    assert_allclose(quantile_coverage,
+                    np.ones_like(quantile_coverage) * .95,
+                    rtol=5e-2)
+    moment_coverage = moment_in_ci / n_trials
+    assert_allclose(moment_coverage,
+                    np.ones_like(moment_in_ci) * .95,
+                    rtol=5e-2)
+
+
+def test_cic_model_dispersion_effect():
+    """
+    Test a 3x3 CIC model where treatments are multiplying the distribution
+    by some number, which differs by group and time.
+    The test is done by simulating and estimating the model many times
+    and checking the coverage of the confidence intervals.
+    """
+    np.random.seed(45354354)
+
+    treat = np.array([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 1, 1]
+    ], dtype=np.bool)
+
+    n_trials = 250
+    n_obs = 2000
+    quantiles = np.array([.5])
+    moments = [np.mean, np.std]
+    quantile_in_ci = np.zeros((3, 3, 1), dtype=np.int_)
+    moment_in_ci = np.zeros((3, 3, 2), dtype=np.int_)
+    for trial_ind in range(n_trials):
+        g, t, y = generate_sample(n_obs)
+        y[(g == 1) & (t == 2)] *= 2
+        y[(g == 2) & (t == 1)] *= 3
+        y[(g == 2) & (t == 2)] *= .5
+        model = cic.CICModel(y, g, t, treat, quantiles, moments)
+
+        # Q_{aX}(p) = a Q_X(p) for a quantile function Q and a > 0.
+        # The median here is 1000, 2 * 1000 = 2000, hence the QTE is 1000
+        mean, se = model.treatment_quantile(1, 2)
+        quantile_in_ci[:, 0] += ((mean - 1.96 * se <= 1000) &
+                                 (mean + 1.96 * se >= 1000))
+        # The median here is 0, 3 * 0 = 0, hence the QTE is 0
+        mean, se = model.treatment_quantile(2, 1)
+        quantile_in_ci[:, 1] += ((mean - 1.96 * se <= 0) &
+                                 (mean + 1.96 * se >= 0))
+        # The median here is 1000, .5 * 1000 = 500, hence the QTE is -500
+        mean, se = model.treatment_quantile(2, 2)
+        quantile_in_ci[:, 2] += ((mean - 1.96 * se <= -500) &
+                                 (mean + 1.96 * se >= -500))
+
+        mean, se = model.treatment_moment(1, 2)
+        # The mean goes from 1000 to 2000 => ATE = 1000
+        moment_in_ci[:, 0, 0] += ((mean[0] - 1.96 * se[0] <= 1000) &
+                                  (mean[0] + 1.96 * se[0] >= 1000))
+        # The standard deviation goes from 1 to 2 => TE = 1
+        moment_in_ci[:, 0, 1] += ((mean[1] - 1.96 * se[1] <= 1) &
+                                  (mean[1] + 1.96 * se[1] >= 1))
+        mean, se = model.treatment_moment(2, 1)
+        # The mean goes from 0 to 0 => ATE = 0
+        moment_in_ci[:, 1, 0] += ((mean[0] - 1.96 * se[0] <= 0) &
+                                  (mean[0] + 1.96 * se[0] >= 0))
+        # The standard deviation goes from 1/3 to 1 => TE = 2/3
+        moment_in_ci[:, 1, 1] += ((mean[1] - 1.96 * se[1] <= 2 / 3) &
+                                  (mean[1] + 1.96 * se[1] >= 2 / 3))
+        mean, se = model.treatment_moment(2, 2)
+        # The mean goes from 1000 to 500 => ATE = -500
+        moment_in_ci[:, 2, 0] += ((mean[0] - 1.96 * se[0] <= -500) &
+                                  (mean[0] + 1.96 * se[0] >= -500))
+        # The standard deviation goes from 1 to .5 => TE = -.5
+        moment_in_ci[:, 2, 1] += ((mean[1] - 1.96 * se[1] <= -.5) &
+                                  (mean[1] + 1.96 * se[1] >= -.5))
+
+    quantile_coverage = quantile_in_ci / n_trials
+    assert_allclose(quantile_coverage,
+                    np.ones_like(quantile_coverage) * .95,
+                    rtol=5e-2)
+    moment_coverage = moment_in_ci / n_trials
+    assert_allclose(moment_coverage,
+                    np.ones_like(moment_in_ci) * .95,
+                    rtol=5e-2)
+
+
+def generate_sample(n_obs):
+    g = np.random.choice(np.arange(3), n_obs)
+    t = np.random.choice(np.arange(3), n_obs)
+
+    u = np.random.randn(n_obs)
+    y = np.empty(n_obs)
+    y[t == 0] = u[t == 0]**3
+    y[t == 1] = u[t == 1] / 3
+    y[t == 2] = u[t == 2] + 1000
+
+    return g, t, y

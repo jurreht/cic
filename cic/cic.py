@@ -282,6 +282,18 @@ class CICModel:
             self.moment_effect = effect[:, quantiles.shape[0]:]
             self.moment_se = effect_se[:, quantiles.shape[0]:]
 
+    def treatment_quantile(self, g, t):
+        ind = self._treatment_ind(g, t)
+        return self.quantile_effect[ind], self.quantile_se[ind]
+
+    def treatment_moment(self, g, t):
+        ind = self._treatment_ind(g, t)
+        return self.moment_effect[ind], self.moment_se[ind]
+
+    def _treatment_ind(self, g, t):
+        row_match = (self.treatment_for == np.array([g, t])).all(axis=1)
+        return np.nonzero(row_match)[0][0]
+
 
 def calculate_effects(
     y00, y01, y10, y11, quantiles, moments, draws, cdf_corr, inv_corr
@@ -311,7 +323,7 @@ def calculate_multiple_effects(
     if moments is not None:
         n_targets += len(moments)
     effects = np.empty((len(possible_combinations), n_targets))
-    for i, (t0, g0, t1, g1) in enumerate(possible_combinations):
+    for i, (g0, t0, g1, t1) in enumerate(possible_combinations):
         y00 = y[(g == g0) & (t == t0)]
         y01 = y[(g == g0) & (t == t1)]
         y10 = y[(g == g1) & (t == t0)]
