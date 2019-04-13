@@ -139,6 +139,10 @@ def calculate_cic(
     # calculation as during bootstrapping
     draws = np.random.uniform(size=n_draws)
 
+    # Quantiles and draws need to be sorted for get_quantiles()
+    quantiles.sort()
+    draws.sort()
+
     estimated_quantile_effects, estimated_moment_effects = calculate_effects(
         y00, y01, y10, y11, quantiles, moments, draws, cdf_corr, inv_corr)
 
@@ -205,6 +209,10 @@ def calculate_general_cic(
     # Use the same draws for calculating moments during effect size
     # calculation as during bootstrapping
     draws = np.random.uniform(size=n_draws)
+
+    # Quantiles and draws need to be sorted for get_quantiles()
+    quantiles.sort()
+    draws.sort()
 
     # Calculate the effect using all possible combinations of treatment
     # and control
@@ -357,25 +365,17 @@ def calc_cf_cdf(y00, y01, y10, cdf_corr, inv_corr):
 @numba.jit(nopython=True, cache=True, nogil=True)
 def get_quantiles(cdf, support, quantiles, inv_corr):
     ret = np.empty(quantiles.shape[0])
-    n_els = cdf.shape[0]
-    for i in range(quantiles.shape[0]):
-        p = quantiles[i] - inv_corr
-        if cdf[0] >= p:
-            ret[i] = support[0]
-        else:
-            # Use the fact that cdf should be approximately uniformly
-            # distributed if the data is a random sample. Hence, this
-            # is a pretty good first guess where the percentile will
-            # be in the sorted array.
-            j = math.floor(p * (n_els - 1))
-            if cdf[j] < p:
-                while cdf[j] < p:
-                    j += 1
-            else:
-                while cdf[j] >= p:
-                    j -= 1
-                j += 1
-            ret[i] = support[j]
+    q_ind = 0
+    p = quantiles[0] - inv_corr
+    for i in range(cdf.shape[0]):
+        while cdf[i] >= p:
+            ret[q_ind] = support[i]
+            q_ind += 1
+            if q_ind >= quantiles.shape[0]:
+                break
+            p = quantiles[q_ind] - inv_corr
+        if q_ind >= quantiles.shape[0]:
+            break
     return ret
 
 
