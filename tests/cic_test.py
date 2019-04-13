@@ -85,19 +85,18 @@ def test_multiple_cic_from_simple_case(inpath):
                         np.ones(y11.shape[0], dtype=np.int_)])
     treat = np.array([[0, 0], [0, 1]], dtype=np.bool_)
 
-    treatment_for, est_qte, se_qte, est_ate, se_ate = \
-        cic.calculate_general_cic(
-            y, g, t, treat, n_bootstraps=499, moments=[np.mean], n_draws=10000)
+    model = cic.CICModel(y, g, t, treat, n_bootstraps=499, moments=[np.mean],
+                         n_draws=10000)
 
-    assert np.all(treatment_for == np.array([[1, 1]], dtype=np.int_))
+    assert np.all(model.treatment_for == np.array([[1, 1]], dtype=np.int_))
 
     est_test = objs['est'][0, 1:10]
     se_test = objs['se'][1, 1:10]
 
-    assert_allclose(est_qte[0], est_test)
-    assert_allclose(se_qte[0], se_test, atol=5e-2, rtol=1e-3)
+    assert_allclose(model.quantile_effect[0], est_test)
+    assert_allclose(model.quantile_se[0], se_test, atol=5e-2, rtol=1e-3)
     # Test average treatment effect
     # It is possible to get closer than an atol of 5e-3 by increasing n_draws
     # above, at the cost of slower tests
-    assert_allclose(est_ate[0], objs['est'][0, 0], atol=5e-3)
-    assert_allclose(se_ate[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)
+    assert_allclose(model.moment_effect[0], objs['est'][0, 0], atol=5e-3)
+    assert_allclose(model.moment_se[0], objs['se'][1, 0], atol=5e-2, rtol=1e-3)
