@@ -1,3 +1,4 @@
+import functools
 import itertools
 
 import joblib
@@ -189,7 +190,7 @@ def calculate_cic(
 class CICModel:
     def __init__(
         self, y, g, t, treat, quantiles=np.linspace(.1, .9, 9), moments=None,
-        n_draws=1000, n_bootstraps=99
+        n_draws=1000, n_bootstraps=99, n_jobs=None
     ):
         self.quantiles = quantiles
         n_obs = y.shape[0]
@@ -224,18 +225,24 @@ class CICModel:
             y, g, t, possible_combinations, quantiles, moments, draws)
 
         # Bootstrap the covariance matrix of the treatments effects
-        bootstrap_effects = np.empty((n_bootstraps, self.effects.shape[0],
-                                      self.effects.shape[1]))
-        for i in range(n_bootstraps):
-            y_resample = np.empty_like(y)
-            for j, k in itertools.product(range(n_groups), range(n_periods)):
-                target = (g == j) & (t == k)
-                y_resample[target] = np.random.choice(y[target], target.sum(),
-                                                      replace=True)
-            bootstrap_effects[i] = calculate_multiple_effects(
-                y_resample, g, t, possible_combinations, quantiles, moments,
-                draws
+        calc_bootstrap = functools.partial(
+            self._bootstrap_multiple_effects, y, g, t, treat, quantiles,
+            moments, possible_combinations, draws
+        )
+        if n_jobs is None:
+            bootstrap_effects = np.empty((n_bootstraps, self.effects.shape[0],
+                                          self.effects.shape[1]))
+            for i in range(n_bootstraps):
+                bootstrap_effects[i] = calc_bootstrap()
+        else:
+            bootstrap_effects = joblib.Parallel(n_jobs, prefer='threads')(
+                joblib.delayed(calc_bootstrap)() for _ in range(n_bootstraps)
             )
+            # bootstrap_effects is a list of ndarray's, make it a single
+            # ndarray
+            bootstrap_effects = np.concatenate([
+                x[np.newaxis] for x in bootstrap_effects
+            ], axis=0)
 
         # Calculate the combined effect
         self.n_treatment_effects = treat.sum()
@@ -326,6 +333,21 @@ class CICModel:
         rank_dist = (np.linalg.matrix_rank(cov_inv) -
                      self.n_treatment_effects)
         return test_stat, rank_dist
+
+    def _bootstrap_multiple_effects(
+        self, y, g, t, treat, quantiles, moments, possible_combinations, draws
+    ):
+        y_resample = np.empty_like(y)
+        n_groups = treat.shape[0]
+        n_periods = treat.shape[1]
+        for j, k in itertools.product(range(n_groups), range(n_periods)):
+            target = (g == j) & (t == k)
+            y_resample[target] = np.random.choice(y[target], target.sum(),
+                                                  replace=True)
+        return calculate_multiple_effects(
+            y_resample, g, t, possible_combinations, quantiles, moments,
+            draws
+        )
 
 
 def calculate_effects(
