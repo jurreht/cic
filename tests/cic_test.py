@@ -4,6 +4,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 import pytest
 import scipy.io
+import scipy.stats
 
 import cic
 
@@ -267,6 +268,41 @@ def test_cic_model_dispersion_effect():
     assert_allclose(moment_coverage,
                     np.ones_like(moment_in_ci) * .95,
                     rtol=5e-2)
+
+
+def test_test_model_based_on_quantile_valid():
+    np.random.seed(3423482)
+
+    treat = np.array([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 1, 1]
+    ], dtype=np.bool)
+
+    n_trials = 100
+    n_obs = 500
+    quantiles = np.array([.5])
+    reject = 0
+    for trial_ind in range(n_trials):
+        g, t, y = generate_sample(n_obs)
+        # y[(g == 1) & (t == 2)] = 2 * y[(g == 1) & (t == 2)] - 3
+        # y[(g == 2) & (t == 1)] = np.exp(y[(g == 2) & (t == 1)])
+        # y[(g == 1) & (t == 2)] *= 2
+        # y[(g == 2) & (t == 1)] -= 3
+        # y[(g == 2) & (t == 2)] += 1
+        model = cic.CICModel(y, g, t, treat, quantiles)
+
+        test_stat, rank_dist = model.test_model_based_on_quantile(0)
+        crit_val = scipy.stats.chi2.ppf(.95, rank_dist)
+        # import pdb; pdb.set_trace()
+        if test_stat > crit_val:
+            reject += 1
+
+    reject_prob = reject / n_trials
+    # Just check that the rejection probability is not too large.
+    # To get reject_prob~0.05 increse n_obs above, but this slows
+    # down the test too much.
+    assert reject_prob <= 0.05
 
 
 def generate_sample(n_obs):

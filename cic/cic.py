@@ -191,6 +191,7 @@ class CICModel:
         self, y, g, t, treat, quantiles=np.linspace(.1, .9, 9), moments=None,
         n_draws=1000, n_bootstraps=99
     ):
+        self.quantiles = quantiles
         n_obs = y.shape[0]
         n_groups = treat.shape[0]
         n_periods = treat.shape[1]
@@ -219,12 +220,12 @@ class CICModel:
         possible_combinations = tuple(filter(
             lambda x: valid_combination(treat, *x),
             itertools.product(range(n_groups), range(n_periods), repeat=2)))
-        effects = calculate_multiple_effects(y, g, t, possible_combinations,
-                                             quantiles, moments, draws)
+        self.effects = calculate_multiple_effects(
+            y, g, t, possible_combinations, quantiles, moments, draws)
 
         # Bootstrap the covariance matrix of the treatments effects
-        bootstrap_effects = np.empty((n_bootstraps, effects.shape[0],
-                                      effects.shape[1]))
+        bootstrap_effects = np.empty((n_bootstraps, self.effects.shape[0],
+                                      self.effects.shape[1]))
         for i in range(n_bootstraps):
             y_resample = np.empty_like(y)
             for j, k in itertools.product(range(n_groups), range(n_periods)):
@@ -237,23 +238,27 @@ class CICModel:
             )
 
         # Calculate the combined effect
-        n_treatment_effects = treat.sum()
-        self.treatment_for = np.empty((n_treatment_effects, 2))
+        self.n_treatment_effects = treat.sum()
+        self.treatment_for = np.empty((self.n_treatment_effects, 2))
         # The matrix A maps `effects` into the (g, t)-treatment effect
-        A = np.zeros((len(possible_combinations), n_treatment_effects))
+        self.A = np.zeros((len(possible_combinations),
+                           self.n_treatment_effects))
         i = 0
         for g1, t1 in itertools.product(range(n_groups), range(n_periods)):
             if treat[g1, t1]:
-                A[:, i] = tuple(map(
+                self.A[:, i] = tuple(map(
                     lambda x: x[2] == g1 and x[3] == t1,
                     possible_combinations
                 ))
                 self.treatment_for[i] = g1, t1
                 i += 1
 
-        effect = np.empty((n_treatment_effects, effects.shape[1]))
+        effect = np.empty((self.n_treatment_effects, self.effects.shape[1]))
         effect_se = np.empty_like(effect)
-        for effect_ind in range(effects.shape[1]):
+        self.cov_inv = np.empty((self.effects.shape[1],
+                                 len(possible_combinations),
+                                 len(possible_combinations)))
+        for effect_ind in range(self.effects.shape[1]):
             # TODO: The covariance of the bootstrap sample is not necessarily a
             # good estimator of the covariance matrix! Perhaps try also using
             # the percentile method. See Machado, Jose A.F. and Paulo Parente.
@@ -261,22 +266,24 @@ class CICModel:
             # percentile method." Econometrics Journal 8: 70-78.
             cov = np.cov(bootstrap_effects[:, :, effect_ind], rowvar=False,
                          bias=True)
-            if effects.shape[0] == 1:
+            if self.effects.shape[0] == 1:
                 # In this case np.cov() returns a scalar. Invert it and make
                 # it a matrix.
                 cov_inv = (1 / cov)[np.newaxis, np.newaxis]
             else:
                 cov_inv = np.linalg.pinv(cov)
+            self.cov_inv[effect_ind] = cov_inv
 
             effect[:, effect_ind] = np.linalg.solve(
-                A.T @ cov_inv @ A, A.T @ cov_inv @ effects[:, effect_ind])
-            effect_cov = np.linalg.inv(A.T @ cov_inv @ A)
+                self.A.T @ cov_inv @ self.A,
+                self.A.T @ cov_inv @ self.effects[:, effect_ind])
+            effect_cov = np.linalg.inv(self.A.T @ cov_inv @ self.A)
             effect_se[:, effect_ind] = np.sqrt(np.diag(effect_cov))
 
         self.quantile_effect = effect[:, :quantiles.shape[0]]
         self.quantile_se = effect_se[:, :quantiles.shape[0]]
         if moments is None:
-            self.moment_effect = np.empty((n_treatment_effects, 0))
+            self.moment_effect = np.empty((self.n_treatment_effects, 0))
             self.moment_se = np.empty_like(self.moment_effect)
         else:
             self.moment_effect = effect[:, quantiles.shape[0]:]
@@ -293,6 +300,32 @@ class CICModel:
     def _treatment_ind(self, g, t):
         row_match = (self.treatment_for == np.array([g, t])).all(axis=1)
         return np.nonzero(row_match)[0][0]
+
+    def test_model_based_on_quantile(self, quantile_ind):
+        effects_ind = quantile_ind
+        mean_diff = (self.effects[:, effects_ind] -
+                     self.A @ self.quantile_effect[:, quantile_ind])
+        cov_inv = self.cov_inv[effects_ind]
+        test_stat = mean_diff.T @ cov_inv @ mean_diff
+        # We need the rank of V here, and cov is the psuedo-inverse of V.
+        # However, the rank of the pseudo-inverse is the same as of the
+        # original matrix so there is no problem here.
+        rank_dist = (np.linalg.matrix_rank(cov_inv) -
+                     self.n_treatment_effects)
+        return test_stat, rank_dist
+
+    def test_model_based_on_moment(self, moment_ind):
+        effects_ind = moment_ind + self.quantiles.shape[0]
+        mean_diff = (self.effects[:, effects_ind] -
+                     self.A @ self.moment_effect[:, moment_ind])
+        cov_inv = self.cov_inv[effects_ind]
+        test_stat = mean_diff.T @ cov_inv @ mean_diff
+        # We need the rank of V here, and cov is the psuedo-inverse of V.
+        # However, the rank of the pseudo-inverse is the same as of the
+        # original matrix so there is no problem here.
+        rank_dist = (np.linalg.matrix_rank(cov_inv) -
+                     self.n_treatment_effects)
+        return test_stat, rank_dist
 
 
 def calculate_effects(
