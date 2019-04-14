@@ -394,6 +394,6 @@ def sample_from_cdf(cdf, support, draws):
     return get_quantiles(cdf, support, draws, 0)
 
 
-def valid_combination(treat, t0, g0, t1, g1):
+def valid_combination(treat, g0, t0, g1, t1):
     return ((not (treat[g0, t0] or treat[g0, t1] or treat[g1, t0])) and
             treat[g1, t1])
