@@ -305,6 +305,26 @@ def test_test_model_based_on_quantile_valid():
     assert reject_prob <= 0.05
 
 
+def test_combine_effects():
+    np.random.seed(4545543)
+
+    treat = np.array([
+        [0, 0, 0],
+        [0, 1, 1]
+    ], dtype=np.bool)
+    g = np.concatenate((np.zeros(3000, dtype=np.int_), np.ones(4000, dtype=np.int_)))
+    t = np.concatenate((np.full(1000, 0), np.full(1000, 1), np.full(1000, 2),
+                        np.full(1000, 0), np.full(1000, 1), np.full(2000, 2)))
+    y = np.random.randn(7000)
+    y[(g == 1) & (t == 1)] += 1
+    y[(g == 1) & (t == 2)] += 2
+    model = cic.CICModel(y, g, t, treat, np.array([.5, .6]), [np.mean], n_draws=2000)
+    qte_effect, _, moment_effect, _ = model.combine_effects([(1, 1), (1, 2)])
+    true_effect = 1 / 3 + 2 * 2 / 3
+    assert_allclose(qte_effect, true_effect, rtol=5e-2)
+    assert_allclose(moment_effect, true_effect, rtol=5e-2)
+
+
 def generate_sample(n_obs):
     g = np.random.choice(np.arange(3), n_obs)
     t = np.random.choice(np.arange(3), n_obs)

@@ -207,6 +207,8 @@ class CICModel:
         if np.any((~treat[:, 1:]) & (treat[:, 1:] ^ treat[:, :-1])):
             raise ValueError('A group cannot become untreated after becoming'
                              ' treated.')
+        self.g = g
+        self.t = t
 
         # Use the same draws for calculating moments during effect size
         # calculation as during bootstrapping
@@ -235,7 +237,7 @@ class CICModel:
             for i in range(n_bootstraps):
                 bootstrap_effects[i] = calc_bootstrap()
         else:
-            bootstrap_effects = joblib.Parallel(n_jobs, prefer='threads')(
+            bootstrap_effects = joblib.Parallel(n_jobs, prefer='threads', verbose=11)(
                 joblib.delayed(calc_bootstrap)() for _ in range(n_bootstraps)
             )
             # bootstrap_effects is a list of ndarray's, make it a single
@@ -287,6 +289,8 @@ class CICModel:
             effect_cov = np.linalg.inv(self.A.T @ cov_inv @ self.A)
             effect_se[:, effect_ind] = np.sqrt(np.diag(effect_cov))
 
+        self.all_effect = effect
+        self.all_se = effect_se
         self.quantile_effect = effect[:, :quantiles.shape[0]]
         self.quantile_se = effect_se[:, :quantiles.shape[0]]
         if moments is None:
@@ -333,6 +337,47 @@ class CICModel:
         rank_dist = (np.linalg.matrix_rank(cov_inv) -
                      self.n_treatment_effects)
         return test_stat, rank_dist
+
+    def combine_effects(self, effects_for, weigh_by='n'):
+        n_effects = self.all_effect.shape[1]
+        weights = np.zeros((n_effects, self.n_treatment_effects, 1))
+        if weigh_by == 'n':
+            for i in range(self.n_treatment_effects):
+                g, t = self.treatment_for[i]
+                if (g, t) in effects_for:
+                    weights[:, i] = np.sum((self.g == g) & (self.t == t))
+            weights /= weights[0].sum()
+        elif weigh_by == 'cov':
+                target = np.zeros((self.n_treatment_effects, 1),
+                                  dtype=np.bool_)
+                for i in range(self.n_treatment_effects):
+                    g, t = self.treatment_for[i]
+                    if (g, t) in effects_for:
+                        target[i] = True
+                for effect_ind in range(n_effects):
+                    weights[effect_ind] = np.linalg.solve(
+                        target.T @ self.A.T @ self.cov_inv[effect_ind] @ self.A @ target,
+                        target.T @ self.A.T @ self.cov_inv[effect_ind] @ self.A
+                    ).T
+        else:
+            raise ValueError('Invalid value for weigh_by, use n or cov.')
+
+        weighed_effects = np.empty(n_effects)
+        weighed_se = np.empty_like(weighed_effects)
+        for effect_ind in range(n_effects):
+            weighed_effects[effect_ind] = (weights[effect_ind].T @
+                                           self.all_effect[:, effect_ind])
+            weighed_cov = weights[effect_ind].T @ np.linalg.solve(
+                self.A.T @ self.cov_inv[effect_ind] @ self.A,
+                weights[effect_ind])
+            weighed_se[effect_ind] = np.sqrt(np.diag(weighed_cov))
+
+        quantile_combined = weighed_effects[:self.quantiles.shape[0]]
+        quantile_combined_se = weighed_se[:self.quantiles.shape[0]]
+        moment_combined = weighed_effects[self.quantiles.shape[0]:]
+        moment_combined_se = weighed_se[self.quantiles.shape[0]:]
+        return (quantile_combined, quantile_combined_se, moment_combined,
+                moment_combined_se)
 
     def _bootstrap_multiple_effects(
         self, y, g, t, treat, quantiles, moments, possible_combinations, draws
